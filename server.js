@@ -14,7 +14,9 @@ const X_CLIENT_ID = process.env.X_CLIENT_ID || ''
 const X_CLIENT_SECRET = process.env.X_CLIENT_SECRET || ''
 const X_REDIRECT_URI = process.env.X_REDIRECT_URI || `http://localhost:${PORT}/auth/callback`
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || ''
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''
 const MOCK_GENERATE = process.env.MOCK_GENERATE === '1'
+const HAS_GENERATOR = Boolean(GEMINI_API_KEY || REPLICATE_API_TOKEN)
 
 const app = express()
 app.use(express.json())
@@ -40,7 +42,7 @@ function createSession(res, data) {
 app.get('/api/config', (req, res) => {
   res.json({
     xOAuth: Boolean(X_CLIENT_ID),
-    mock: MOCK_GENERATE || !REPLICATE_API_TOKEN,
+    mock: MOCK_GENERATE || !HAS_GENERATOR,
   })
 })
 
@@ -142,19 +144,67 @@ app.post('/api/logout', (req, res) => {
 })
 
 // ---- generation ----
-async function toDataUri(src) {
-  if (src.startsWith('data:')) return src
+// images are handled as {mime, data(base64)} parts
+async function toImagePart(src) {
+  if (src.startsWith('data:')) {
+    const m = src.match(/^data:([^;]+);base64,(.+)$/)
+    if (!m) throw new Error('bad data uri')
+    return { mime: m[1], data: m[2] }
+  }
   const r = await fetch(src, { redirect: 'follow' })
   if (!r.ok) throw new Error(`failed to fetch photo (${r.status})`)
-  const type = r.headers.get('content-type') || 'image/jpeg'
   const buf = Buffer.from(await r.arrayBuffer())
-  return `data:${type};base64,${buf.toString('base64')}`
+  return { mime: r.headers.get('content-type') || 'image/jpeg', data: buf.toString('base64') }
 }
 
 function styleReference() {
   const p = path.join(__dirname, 'assets', 'style-reference.png')
   if (!fs.existsSync(p)) return null
-  return `data:image/png;base64,${fs.readFileSync(p).toString('base64')}`
+  const buf = fs.readFileSync(p)
+  const mime = buf[0] === 0xff && buf[1] === 0xd8 ? 'image/jpeg' : 'image/png'
+  return { mime, data: buf.toString('base64') }
+}
+
+const toDataUri = (part) => `data:${part.mime};base64,${part.data}`
+
+async function generateWithGemini(prompt, images) {
+  const models = ['gemini-2.5-flash-image', 'gemini-2.5-flash-image-preview']
+  let lastErr = ''
+  for (const model of models) {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: 'POST',
+        headers: { 'x-goog-api-key': GEMINI_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: prompt },
+                ...images.map((i) => ({ inline_data: { mime_type: i.mime, data: i.data } })),
+              ],
+            },
+          ],
+        }),
+      }
+    )
+    if (r.status === 404) continue // model name not available on this key, try next
+    if (!r.ok) {
+      lastErr = await r.text()
+      console.error('gemini error', r.status, lastErr.slice(0, 500))
+      throw new Error(`gemini error ${r.status}`)
+    }
+    const json = await r.json()
+    const parts = json.candidates?.[0]?.content?.parts || []
+    const img = parts.find((p) => p.inlineData || p.inline_data)
+    if (!img) {
+      const text = parts.find((p) => p.text)?.text || 'no image in response'
+      throw new Error(`gemini returned no image: ${text.slice(0, 200)}`)
+    }
+    const d = img.inlineData || img.inline_data
+    return `data:${d.mimeType || d.mime_type || 'image/png'};base64,${d.data}`
+  }
+  throw new Error(lastErr || 'no gemini image model available for this key')
 }
 
 const HOOD_PROMPT = [
@@ -163,10 +213,12 @@ const HOOD_PROMPT = [
   'with visible pixel clusters and smooth shading.',
   'They wear an oversized bright lime-green (chartreuse) hoodie with the hood pulled up',
   'over their head, a chunky black metal zipper, black drawstrings, and bold black',
-  'tiger-claw stripe markings on the hood and shoulders.',
-  "On the chest is a black diamond-shaped emblem with the word 'BOOGA' in bold pixel letters.",
+  'tiger-claw stripe markings on the hood, shoulders and sleeves.',
+  "On the left chest is a black diamond-shaped emblem with the word 'BOOGA' in bold letters,",
+  'and on the right chest a black feather emblem.',
   "Preserve the person's facial likeness: face shape, hair color, skin tone, expression,",
-  'and glasses or accessories if present. Square 1:1 image.',
+  'and any glasses, hat or accessories they wear (if they wear a hat, keep the hat and',
+  'drape the hood behind their head instead). Square 1:1 image.',
 ].join(' ')
 
 app.post('/api/generate', async (req, res) => {
@@ -174,19 +226,25 @@ app.post('/api/generate', async (req, res) => {
   if (!session) return res.status(401).json({ error: 'not signed in' })
 
   try {
-    const photo = await toDataUri(session.user.photo)
+    const photo = await toImagePart(session.user.photo)
 
-    if (MOCK_GENERATE || !REPLICATE_API_TOKEN) {
+    if (MOCK_GENERATE || !HAS_GENERATOR) {
       await new Promise((r) => setTimeout(r, 1500))
-      return res.json({ image: photo, mock: true })
+      return res.json({ image: toDataUri(photo), mock: true })
     }
 
     const ref = styleReference()
-    const imageInput = ref ? [photo, ref] : [photo]
+    const images = ref ? [photo, ref] : [photo]
     const prompt = ref
-      ? `Match exactly the pixel-art style, hoodie design, colors and background of the second input image. ${HOOD_PROMPT}`
+      ? `${HOOD_PROMPT} Match exactly the pixel-art style, hoodie design, colors and background of the second input image.`
       : HOOD_PROMPT
 
+    if (GEMINI_API_KEY) {
+      const image = await generateWithGemini(prompt, images)
+      return res.json({ image })
+    }
+
+    const imageInput = images.map(toDataUri)
     const predRes = await fetch(
       'https://api.replicate.com/v1/models/google/nano-banana/predictions',
       {
@@ -244,5 +302,7 @@ app.get('/api/download', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`hood-avatar api on http://localhost:${PORT}`)
   console.log(`  X OAuth: ${X_CLIENT_ID ? 'configured' : 'NOT configured (demo handle login active)'}`)
-  console.log(`  Replicate: ${REPLICATE_API_TOKEN ? 'configured' : 'NOT configured (mock generation)'}`)
+  console.log(
+    `  Generator: ${GEMINI_API_KEY ? 'gemini (direct)' : REPLICATE_API_TOKEN ? 'replicate' : 'NONE (mock generation)'}`
+  )
 })
