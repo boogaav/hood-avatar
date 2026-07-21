@@ -65,7 +65,7 @@ h1 {
 .center { display: flex; flex-direction: column; align-items: center; gap: 18px; text-align: center; }
 .center-text { text-align: center; }
 
-.hero-hood { font-size: 56px; filter: hue-rotate(20deg); }
+.hero-hood { width: 116px; height: 116px; filter: drop-shadow(4px 4px 0 rgba(181, 226, 25, 0.25)); }
 
 .pitch { font-size: 17px; max-width: 420px; line-height: 1.5; }
 

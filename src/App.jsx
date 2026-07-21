@@ -1,5 +1,38 @@
 import { useEffect, useState } from 'react'
 
+// pixel map: g = hoodie green, d = empty hood void, k = black zipper
+const HOODIE_PIXELS = [
+  '....gggggggg....',
+  '...gggggggggg...',
+  '..gggggggggggg..',
+  '..gggddddddggg..',
+  '.gggddddddddggg.',
+  '.ggddddddddddgg.',
+  '.ggddddddddddgg.',
+  '.ggddddddddddgg.',
+  '.gggddddddddggg.',
+  '..gggddddddggg..',
+  '..ggggddddgggg..',
+  '.ggggggkkgggggg.',
+  'gggggggkkggggggg',
+  'gggggggkkggggggg',
+  'gggggggkkggggggg',
+  'gggggggkkggggggg',
+]
+const PIXEL_FILL = { g: 'var(--green)', d: 'var(--ink)', k: '#000' }
+
+function PixelHoodie() {
+  return (
+    <svg className="hero-hood" viewBox="0 0 16 16" shapeRendering="crispEdges" aria-hidden>
+      {HOODIE_PIXELS.flatMap((row, y) =>
+        [...row].map((c, x) =>
+          c === '.' ? null : <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill={PIXEL_FILL[c]} />
+        )
+      )}
+    </svg>
+  )
+}
+
 const GENERATING_LINES = [
   'KNITTING THE HOODIE…',
   'DYEING IT BOOGA GREEN…',
@@ -126,7 +159,7 @@ export default function App() {
 
       {phase === 'signedout' && (
         <section className="card center">
-          <div className="hero-hood">🟩</div>
+          <PixelHoodie />
           <p className="pitch">
             Turn your X profile pic into a pixel-art avatar in the green HOOD hoodie.
           </p>
