@@ -147,7 +147,7 @@ export default function App() {
       <header>
         <span className="logo-mark">◆</span>
         <h1>HOOD AVATAR</h1>
-        <span className="tag">GET BOOGAFIED</span>
+        <span className="tag">GET HOODED</span>
       </header>
 
       {error && <div className="error">⚠ {error}</div>}
@@ -233,7 +233,7 @@ export default function App() {
         </section>
       )}
 
-      <footer>BOOGA INDUSTRIES · pixel drip division</footer>
+      <footer>pixel drip division</footer>
     </div>
   )
 }
