@@ -7,7 +7,7 @@
     "dev": "concurrently -k \"node server.js\" \"vite --port 5200 --strictPort\"",
     "server": "node server.js",
     "build": "vite build",
-    "deploy": "vite build && wrangler deploy",
+    "deploy": "vite build && npx wrangler deploy",
     "preview": "vite preview"
   },
   "dependencies": {
