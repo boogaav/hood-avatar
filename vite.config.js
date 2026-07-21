@@ -9,7 +9,6 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': 'http://localhost:8800',
-      '/auth': 'http://localhost:8800',
     },
   },
 })

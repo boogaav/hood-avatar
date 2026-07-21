@@ -51,14 +51,9 @@ export default function App() {
   const [lineIdx, setLineIdx] = useState(0)
 
   useEffect(() => {
-    const params = new URLSearchParams(location.search)
-    if (params.get('error')) {
-      setError(`Sign-in failed (${params.get('error')})`)
-      history.replaceState({}, '', location.pathname)
-    }
     async function boot() {
       // no backend (e.g. GitHub Pages) → static demo mode
-      let cfg = { xOAuth: false, mock: true, static: true }
+      let cfg = { mock: true, static: true }
       let me = null
       try {
         const r = await fetch('/api/config')
@@ -83,7 +78,7 @@ export default function App() {
     return () => clearInterval(t)
   }, [phase])
 
-  async function demoLogin(e) {
+  async function login(e) {
     e.preventDefault()
     setError('')
     const clean = handle.replace(/^@/, '').trim()
@@ -96,7 +91,7 @@ export default function App() {
       setPhase('ready')
       return
     }
-    const r = await fetch('/api/demo-login', {
+    const r = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ handle }),
@@ -163,24 +158,16 @@ export default function App() {
           <p className="pitch">
             Turn your X profile pic into a pixel-art avatar in the green HOOD hoodie.
           </p>
-          {config?.xOAuth ? (
-            <a className="btn btn-x" href="/auth/login">
-              𝕏 &nbsp;SIGN IN WITH X
-            </a>
-          ) : (
-            <form onSubmit={demoLogin} className="handle-form">
-              <input
-                value={handle}
-                onChange={(e) => setHandle(e.target.value)}
-                placeholder="@yourhandle"
-                required
-              />
-              <button className="btn" type="submit">FETCH PIC</button>
-              <p className="hint">
-                X OAuth not configured — enter your handle and we grab your public avatar.
-              </p>
-            </form>
-          )}
+          <form onSubmit={login} className="handle-form">
+            <input
+              value={handle}
+              onChange={(e) => setHandle(e.target.value)}
+              placeholder="@yourhandle"
+              required
+            />
+            <button className="btn" type="submit">FETCH PIC</button>
+            <p className="hint">we grab your public X avatar by handle — no login needed</p>
+          </form>
         </section>
       )}
 

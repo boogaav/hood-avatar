@@ -85,8 +85,6 @@ h1 {
 .btn:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--green-dark); }
 .btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--green-dark); }
 .btn-big { font-size: 14px; padding: 18px 30px; }
-.btn-x { background: var(--text); box-shadow: 4px 4px 0 #6c7360; }
-.btn-x:hover { box-shadow: 6px 6px 0 #6c7360; }
 .btn-ghost {
   background: transparent;
   color: var(--green);

@@ -12,10 +12,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.join(__dirname, '.env'), override: true })
 
 const PORT = process.env.API_PORT || 8800
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5200'
-const X_CLIENT_ID = process.env.X_CLIENT_ID || ''
-const X_CLIENT_SECRET = process.env.X_CLIENT_SECRET || ''
-const X_REDIRECT_URI = process.env.X_REDIRECT_URI || `http://localhost:${PORT}/auth/callback`
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || ''
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''
 const MOCK_GENERATE = process.env.MOCK_GENERATE === '1'
@@ -25,9 +21,8 @@ const app = express()
 app.use(express.json())
 app.use(cookieParser())
 
-// ---- in-memory sessions & pending oauth states ----
+// ---- in-memory sessions ----
 const sessions = new Map() // sid -> { user: {name, username, photo} }
-const pendingAuth = new Map() // state -> { verifier, createdAt }
 
 function getSession(req) {
   const sid = req.cookies.sid
@@ -44,83 +39,12 @@ function createSession(res, data) {
 // ---- config ----
 app.get('/api/config', (req, res) => {
   res.json({
-    xOAuth: Boolean(X_CLIENT_ID),
     mock: MOCK_GENERATE || !HAS_GENERATOR,
   })
 })
 
-// ---- X OAuth 2.0 with PKCE ----
-app.get('/auth/login', (req, res) => {
-  if (!X_CLIENT_ID) return res.redirect(FRONTEND_URL + '?error=no_x_credentials')
-  const state = crypto.randomBytes(16).toString('hex')
-  const verifier = crypto.randomBytes(32).toString('base64url')
-  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url')
-  pendingAuth.set(state, { verifier, createdAt: Date.now() })
-  // prune stale states
-  for (const [k, v] of pendingAuth) if (Date.now() - v.createdAt > 10 * 60_000) pendingAuth.delete(k)
-
-  const url = new URL('https://x.com/i/oauth2/authorize')
-  url.searchParams.set('response_type', 'code')
-  url.searchParams.set('client_id', X_CLIENT_ID)
-  url.searchParams.set('redirect_uri', X_REDIRECT_URI)
-  url.searchParams.set('scope', 'users.read tweet.read')
-  url.searchParams.set('state', state)
-  url.searchParams.set('code_challenge', challenge)
-  url.searchParams.set('code_challenge_method', 'S256')
-  res.redirect(url.toString())
-})
-
-app.get('/auth/callback', async (req, res) => {
-  try {
-    const { code, state } = req.query
-    const pending = state && pendingAuth.get(state)
-    if (!code || !pending) return res.redirect(FRONTEND_URL + '?error=oauth_state')
-    pendingAuth.delete(state)
-
-    const body = new URLSearchParams({
-      grant_type: 'authorization_code',
-      code: String(code),
-      redirect_uri: X_REDIRECT_URI,
-      client_id: X_CLIENT_ID,
-      code_verifier: pending.verifier,
-    })
-    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' }
-    if (X_CLIENT_SECRET) {
-      headers.Authorization =
-        'Basic ' + Buffer.from(`${X_CLIENT_ID}:${X_CLIENT_SECRET}`).toString('base64')
-    }
-    const tokenRes = await fetch('https://api.x.com/2/oauth2/token', {
-      method: 'POST',
-      headers,
-      body,
-    })
-    if (!tokenRes.ok) {
-      console.error('token exchange failed', tokenRes.status, await tokenRes.text())
-      return res.redirect(FRONTEND_URL + '?error=token_exchange')
-    }
-    const tokens = await tokenRes.json()
-
-    const meRes = await fetch(
-      'https://api.x.com/2/users/me?user.fields=profile_image_url,name,username',
-      { headers: { Authorization: `Bearer ${tokens.access_token}` } }
-    )
-    if (!meRes.ok) {
-      console.error('users/me failed', meRes.status, await meRes.text())
-      return res.redirect(FRONTEND_URL + '?error=profile_fetch')
-    }
-    const me = (await meRes.json()).data
-    // _normal is 48x48 — swap for the 400x400 variant
-    const photo = (me.profile_image_url || '').replace('_normal', '_400x400')
-    createSession(res, { user: { name: me.name, username: me.username, photo } })
-    res.redirect(FRONTEND_URL)
-  } catch (err) {
-    console.error('oauth callback error', err)
-    res.redirect(FRONTEND_URL + '?error=oauth')
-  }
-})
-
-// ---- demo login (no X app needed): fetch avatar by handle via unavatar ----
-app.post('/api/demo-login', async (req, res) => {
+// ---- login by handle: fetch the public avatar via unavatar ----
+app.post('/api/login', async (req, res) => {
   const handle = String(req.body.handle || '').replace(/^@/, '').trim()
   if (!handle) return res.status(400).json({ error: 'handle required' })
   const url = `https://unavatar.io/twitter/${encodeURIComponent(handle)}?fallback=false`
@@ -328,7 +252,6 @@ app.get('/api/download', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`hood-avatar api on http://localhost:${PORT}`)
-  console.log(`  X OAuth: ${X_CLIENT_ID ? 'configured' : 'NOT configured (demo handle login active)'}`)
   console.log(
     `  Generator: ${GEMINI_API_KEY ? 'gemini (direct)' : REPLICATE_API_TOKEN ? 'replicate' : 'NONE (mock generation)'}`
   )
