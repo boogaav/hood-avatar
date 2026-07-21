@@ -147,20 +147,22 @@ async function generateWithGemini(prompt, images) {
   throw new Error(lastErr || 'no gemini image model available for this key')
 }
 
-const HOOD_PROMPT = [
-  'Redraw the person from the first input image as a high-quality pixel-art avatar:',
-  'bust portrait on a plain light-gray background, rendered in clean detailed pixel art',
-  'with visible pixel clusters and smooth shading.',
-  'They wear an oversized bright lime-green (chartreuse) hoodie with the hood pulled up',
-  'over their head, a chunky black metal zipper, black drawstrings, and bold black',
-  'tiger-claw stripe markings on the hood, shoulders and sleeves.',
-  "On the left chest is a black diamond-shaped emblem with the word 'HOOD' in bold letters,",
-  'and on the right chest a black feather emblem.',
-  "The chest emblem text must read exactly 'HOOD' — even if a style reference image shows a different word.",
-  "Preserve the person's facial likeness: face shape, hair color, skin tone, expression,",
-  'and any glasses, hat or accessories they wear (if they wear a hat, keep the hat and',
-  'drape the hood behind their head instead). Square 1:1 image.',
-].join(' ')
+const hoodPrompt = (emblem) =>
+  [
+    'Redraw the person from the first input image as a high-quality pixel-art avatar:',
+    'bust portrait on a plain light-gray background, rendered in clean detailed pixel art',
+    'with visible pixel clusters and smooth shading.',
+    'They wear an oversized bright lime-green (chartreuse) hoodie with the hood pulled up',
+    'over their head, a chunky black metal zipper, black drawstrings, and bold black',
+    'tiger-claw stripe markings on the hood, shoulders and sleeves.',
+    `On the left chest is a black diamond-shaped emblem with the word '${emblem}' in bold`,
+    'letters sized to fit the diamond, and on the right chest a black feather emblem.',
+    `The chest emblem text must read exactly '${emblem}' — spelled letter-for-letter,`,
+    'even if a style reference image shows a different word.',
+    "Preserve the person's facial likeness: face shape, hair color, skin tone, expression,",
+    'and any glasses, hat or accessories they wear (if they wear a hat, keep the hat and',
+    'drape the hood behind their head instead). Square 1:1 image.',
+  ].join(' ')
 
 app.post('/api/generate', async (req, res) => {
   const session = getSession(req)
@@ -174,6 +176,8 @@ app.post('/api/generate', async (req, res) => {
       return res.json({ image: toDataUri(photo), mock: true })
     }
 
+    const emblem = (session.user.username || 'HOOD').replace(/^@/, '').toUpperCase()
+    const basePrompt = hoodPrompt(emblem)
     const ref = styleReference()
     const images = ref ? [photo, ref] : [photo]
     const prompt = ref
@@ -186,9 +190,9 @@ app.post('/api/generate', async (req, res) => {
           'The SECOND image is a STYLE GUIDE ONLY: copy its pixel-art rendering technique, hoodie',
           'design, colors and background. NEVER copy the face, hair or any identity feature from',
           'the second image.',
-          `TASK: ${HOOD_PROMPT}`,
+          `TASK: ${basePrompt}`,
         ].join(' ')
-      : HOOD_PROMPT
+      : basePrompt
 
     if (GEMINI_API_KEY) {
       const image = await generateWithGemini(prompt, images)
