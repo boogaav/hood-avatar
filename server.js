@@ -253,7 +253,17 @@ app.post('/api/generate', async (req, res) => {
     const ref = styleReference()
     const images = ref ? [photo, ref] : [photo]
     const prompt = ref
-      ? `${HOOD_PROMPT} Match exactly the pixel-art style, hoodie design, colors and background of the second input image.`
+      ? [
+          'INPUT ROLES — follow strictly:',
+          'The FIRST image is the person to portray. Their entire identity — face, facial features,',
+          'hair, skin tone, expression, glasses, hat, accessories — must come EXCLUSIVELY from the',
+          'first image. If the first image is not a clear human face (a logo, sketch or object),',
+          'stylize THAT subject inside the hoodie instead of inventing a person.',
+          'The SECOND image is a STYLE GUIDE ONLY: copy its pixel-art rendering technique, hoodie',
+          'design, colors and background. NEVER copy the face, hair or any identity feature from',
+          'the second image.',
+          `TASK: ${HOOD_PROMPT}`,
+        ].join(' ')
       : HOOD_PROMPT
 
     if (GEMINI_API_KEY) {
