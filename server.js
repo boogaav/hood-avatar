@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import dotenv from 'dotenv'
 import express from 'express'
 import cookieParser from 'cookie-parser'
 import crypto from 'node:crypto'
@@ -7,6 +7,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+// .env is the source of truth — override any key inherited from the shell (e.g. ~/.zshrc)
+dotenv.config({ path: path.join(__dirname, '.env'), override: true })
 
 const PORT = process.env.API_PORT || 8800
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5200'
@@ -167,18 +170,26 @@ function styleReference() {
 
 const toDataUri = (part) => `data:${part.mime};base64,${part.data}`
 
+// the same key format works against either the Gemini API or Vertex AI express
+// endpoint depending on which Google project it comes from — try both.
+const GEMINI_ENDPOINTS = [
+  (m) => `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`,
+  (m) => `https://aiplatform.googleapis.com/v1/publishers/google/models/${m}:generateContent`,
+]
+
 async function generateWithGemini(prompt, images) {
   const models = ['gemini-2.5-flash-image', 'gemini-2.5-flash-image-preview']
+  let sawQuota = false
   let lastErr = ''
   for (const model of models) {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      {
+    for (const endpoint of GEMINI_ENDPOINTS) {
+      const r = await fetch(endpoint(model), {
         method: 'POST',
         headers: { 'x-goog-api-key': GEMINI_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [
             {
+              role: 'user',
               parts: [
                 { text: prompt },
                 ...images.map((i) => ({ inline_data: { mime_type: i.mime, data: i.data } })),
@@ -186,29 +197,28 @@ async function generateWithGemini(prompt, images) {
             },
           ],
         }),
+      })
+      if (!r.ok) {
+        if (r.status === 429) sawQuota = true
+        lastErr = `${r.status}: ${(await r.text()).slice(0, 500)}`
+        console.error('gemini error', endpoint(model), lastErr.slice(0, 200))
+        continue // other endpoint/model may still work
       }
+      const json = await r.json()
+      const parts = json.candidates?.[0]?.content?.parts || []
+      const img = parts.find((p) => p.inlineData || p.inline_data)
+      if (!img) {
+        const text = parts.find((p) => p.text)?.text || 'no image in response'
+        throw new Error(`gemini returned no image: ${text.slice(0, 200)}`)
+      }
+      const d = img.inlineData || img.inline_data
+      return `data:${d.mimeType || d.mime_type || 'image/png'};base64,${d.data}`
+    }
+  }
+  if (sawQuota) {
+    throw new Error(
+      'Gemini image quota exhausted — the API key is on the free tier, which cannot generate images. Enable billing at aistudio.google.com or set REPLICATE_API_TOKEN.'
     )
-    if (r.status === 404) continue // model name not available on this key, try next
-    if (r.status === 429) {
-      console.error('gemini quota', (await r.text()).slice(0, 500))
-      throw new Error(
-        'Gemini image quota exhausted — the API key is on the free tier, which cannot generate images. Enable billing at aistudio.google.com or set REPLICATE_API_TOKEN.'
-      )
-    }
-    if (!r.ok) {
-      lastErr = await r.text()
-      console.error('gemini error', r.status, lastErr.slice(0, 500))
-      throw new Error(`gemini error ${r.status}`)
-    }
-    const json = await r.json()
-    const parts = json.candidates?.[0]?.content?.parts || []
-    const img = parts.find((p) => p.inlineData || p.inline_data)
-    if (!img) {
-      const text = parts.find((p) => p.text)?.text || 'no image in response'
-      throw new Error(`gemini returned no image: ${text.slice(0, 200)}`)
-    }
-    const d = img.inlineData || img.inline_data
-    return `data:${d.mimeType || d.mime_type || 'image/png'};base64,${d.data}`
   }
   throw new Error(lastErr || 'no gemini image model available for this key')
 }
