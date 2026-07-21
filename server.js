@@ -189,6 +189,12 @@ async function generateWithGemini(prompt, images) {
       }
     )
     if (r.status === 404) continue // model name not available on this key, try next
+    if (r.status === 429) {
+      console.error('gemini quota', (await r.text()).slice(0, 500))
+      throw new Error(
+        'Gemini image quota exhausted — the API key is on the free tier, which cannot generate images. Enable billing at aistudio.google.com or set REPLICATE_API_TOKEN.'
+      )
+    }
     if (!r.ok) {
       lastErr = await r.text()
       console.error('gemini error', r.status, lastErr.slice(0, 500))

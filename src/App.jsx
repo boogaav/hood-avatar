@@ -213,7 +213,7 @@ export default function App() {
               <p className="loading-line">{GENERATING_LINES[lineIdx]}</p>
             </div>
           )}
-          <button className="link" onClick={logout}>sign out</button>
+          <button className="link" onClick={logout}>restart</button>
         </section>
       )}
 
