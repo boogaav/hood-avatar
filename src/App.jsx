@@ -128,7 +128,7 @@ export default function App() {
         <section className="card center">
           <div className="hero-hood">🟩</div>
           <p className="pitch">
-            Turn your X profile pic into a pixel-art avatar in the green BOOGA hoodie.
+            Turn your X profile pic into a pixel-art avatar in the green HOOD hoodie.
           </p>
           {config?.xOAuth ? (
             <a className="btn btn-x" href="/auth/login">
@@ -208,8 +208,7 @@ export default function App() {
             <a className="btn btn-big" href={downloadUrl()} download="hood-avatar.png">
               ↓ DOWNLOAD
             </a>
-            <button className="btn btn-ghost" onClick={generate}>↻ RE-ROLL</button>
-            <button className="link" onClick={logout}>sign out</button>
+            <button className="btn btn-ghost" onClick={logout}>↻ NEW HANDLE</button>
           </div>
         </section>
       )}
